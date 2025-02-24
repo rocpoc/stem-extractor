@@ -7,21 +7,24 @@ some software to extract stems from a youtube playlist
 1. Install dependencies:
 
 ```bash
-pip install -r requirements.txt
+pip3 install -r requirements.txt
 ```
 
 2. Run the script:
 
 ```bash
-python yt2stems.py
+python3 yt2stems.py
 ```
 
-3. Enter the URL of the playlist you want to extract stems from:
+3. Enter the URL of the playlist or video you want to extract stems from:
 
 ![ui](/img/ui.png)
 
-```bash
-Enter the URL of the playlist you want to extract stems from: https://www.youtube.com/playlist?<playlist_id>
+```output
+# playlist:
+https://www.youtube.com/playlist?list=PLxxx...
+# or single video:
+https://www.youtube.com/watch?v=xxxxx
 ```
 
 4. The script will download the playlist and extract the stems:
