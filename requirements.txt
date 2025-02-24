@@ -1,0 +1,6 @@
+yt-dlp
+demucs
+torch
+torchaudio
+soundfile
+certifi

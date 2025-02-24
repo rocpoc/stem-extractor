@@ -2,14 +2,15 @@ import os
 import json
 import subprocess
 import logging
+import sys
 import tkinter as tk
 from tkinter import END
 
-# Configure logging
+# Configure logging to output to the terminal
 logging.basicConfig(
-    filename='app.log',
     level=logging.INFO,
-    format='%(asctime)s %(levelname)s: %(message)s'
+    format='%(asctime)s %(levelname)s: %(message)s',
+    stream=sys.stdout
 )
 
 # JSON file to track downloaded video IDs
@@ -41,13 +42,13 @@ def save_downloaded_ids(ids):
 def update_download_tracker(video_id):
     """Add a new video ID to the tracker JSON."""
     downloaded = load_downloaded_ids()
-    if video_id not in downloaded:
+    if video_id and video_id not in downloaded:
         downloaded[video_id] = True
         save_downloaded_ids(downloaded)
 
 def download_playlist(playlist_url):
     """
-    Download audio from the YouTube playlist.
+    Download audio from a YouTube playlist.
     Uses yt-dlp to extract audio in WAV format.
     Only new videos (i.e., not in our JSON tracker) will be processed.
     The downloaded files use the YouTube title as the filename and are saved in DOWNLOAD_DIR.
@@ -64,7 +65,7 @@ def download_playlist(playlist_url):
         return
 
     downloaded = load_downloaded_ids()
-    new_videos = [vid for vid in video_ids if vid not in downloaded]
+    new_videos = [vid for vid in video_ids if vid and vid not in downloaded]
 
     if not new_videos:
         logging.info("No new videos found in the playlist.")
@@ -90,9 +91,42 @@ def download_playlist(playlist_url):
         except subprocess.CalledProcessError as e:
             logging.error("Error downloading video %s: %s", video_url, e)
 
-import sys  # add this at the top with your other imports
+def download_video(video_url):
+    """
+    Download audio from a single YouTube video.
+    Uses yt-dlp to extract audio in WAV format.
+    The downloaded file uses the YouTube title as the filename and is saved in DOWNLOAD_DIR.
+    """
+    # First, retrieve the video id so we can update the tracker later.
+    try:
+        result = subprocess.run(
+            ['yt-dlp', '--print', '%(id)s', video_url],
+            capture_output=True, text=True, check=True
+        )
+        video_id = result.stdout.strip()
+    except subprocess.CalledProcessError as e:
+        logging.error("Error retrieving video id for %s: %s", video_url, e)
+        video_id = None
+
+    command = [
+        'yt-dlp',
+        '-x',  # extract audio
+        '--audio-format', 'wav',
+        '--output', os.path.join(DOWNLOAD_DIR, '%(title)s.%(ext)s'),
+        video_url
+    ]
+    try:
+        logging.info("Downloading video: %s", video_url)
+        subprocess.run(command, check=True)
+        update_download_tracker(video_id)
+    except subprocess.CalledProcessError as e:
+        logging.error("Error downloading video %s: %s", video_url, e)
 
 def process_audio_with_demucs(audio_file):
+    """
+    Process the downloaded audio file with Demucs for stem extraction.
+    The separated stems will be saved in SEPARATED_DIR.
+    """
     command = [
         sys.executable, '-m', 'demucs',
         '--out', SEPARATED_DIR,
@@ -105,15 +139,21 @@ def process_audio_with_demucs(audio_file):
     except subprocess.CalledProcessError as e:
         logging.error("Error processing %s with Demucs: %s", audio_file, e.stderr)
 
-
-def run_pipeline(playlist_url):
+def run_pipeline(url):
     """
     Run the full pipeline:
-      1. Download new videos' audio from the provided playlist.
+      1. Download new audio from the provided YouTube URL (playlist or single video).
       2. Process each WAV file in DOWNLOAD_DIR with Demucs for stem extraction.
     """
-    download_playlist(playlist_url)
-    
+    url_lower = url.lower()
+    if "youtube.com/playlist" in url_lower:
+        download_playlist(url)
+    elif "youtube.com/watch" in url_lower or "youtu.be/" in url_lower:
+        download_video(url)
+    else:
+        logging.error("Invalid URL provided: %s", url)
+        return
+
     # Process all WAV files in the DOWNLOAD_DIR
     for file in os.listdir(DOWNLOAD_DIR):
         if file.endswith('.wav'):
@@ -127,7 +167,7 @@ class App:
         master.geometry("500x200")
         master.configure(bg="white")
 
-        self.label = tk.Label(master, text="Enter YouTube Playlist URL:", bg="white", fg="black", font=("Helvetica", 12))
+        self.label = tk.Label(master, text="Enter YouTube Playlist or Video URL:", bg="white", fg="black", font=("Helvetica", 12))
         self.label.pack(pady=10)
 
         self.entry = tk.Entry(master, width=50, bg="white", fg="black", font=("Helvetica", 12), relief="solid", borderwidth=1)
@@ -140,13 +180,13 @@ class App:
         self.status_label.pack(pady=5)
 
     def on_run_pipeline(self):
-        playlist_url = self.entry.get().strip()
-        if not playlist_url:
+        url = self.entry.get().strip()
+        if not url:
             self.status_label.config(text="Please enter a valid URL.")
             return
         self.status_label.config(text="Running pipeline...")
         try:
-            run_pipeline(playlist_url)
+            run_pipeline(url)
             self.status_label.config(text="Pipeline completed successfully.")
         except Exception as e:
             logging.error("Unexpected error in pipeline: %s", e)
